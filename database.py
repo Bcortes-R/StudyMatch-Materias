@@ -1,27 +1,24 @@
+import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from urllib.parse import quote_plus
+from dotenv import load_dotenv
 
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
 
-SERVIDOR   = r"DanielaBello\MSSQLSERVER01"
-BASE_DATOS = "StudyMatch"
-DRIVER     = "ODBC Driver 17 for SQL Server"  
+# Obtener credenciales de Neon (PostgreSQL)
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_SSLMODE = os.getenv("DB_SSLMODE", "require")
 
-
-CADENA = (
-    f"DRIVER={{{DRIVER}}};"
-    f"SERVER={SERVIDOR};"
-    f"DATABASE={BASE_DATOS};"
-    f"Trusted_Connection=yes;"
-    f"TrustServerCertificate=yes;"
-)
-
-
-DATABASE_URL = "mssql+pyodbc:///?odbc_connect=" + quote_plus(CADENA)
+# Construir la URL de conexión para PostgreSQL
+DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode={DB_SSLMODE}"
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 def get_db():
     """Dependencia de FastAPI: entrega una sesión y la cierra al terminar."""
@@ -31,19 +28,12 @@ def get_db():
     finally:
         db.close()
 
-
 def probar_conexion():
-    """Prueba rápida: python database.py"""
+    """Prueba rápida: python3 database.py"""
     with engine.connect() as conn:
-        version = conn.execute(text("SELECT @@VERSION")).scalar()
-        tablas = conn.execute(text(
-            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
-            "WHERE TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME"
-        )).fetchall()
-    print(" Conexión exitosa a SQL Server")
-    print("   ", version.split("\n")[0])
-    print(" Tablas encontradas en StudyMatch:", [t[0] for t in tablas])
-
+        version = conn.execute(text("SELECT version()")).scalar()
+        print("✅ Conexión exitosa a PostgreSQL (Neon)")
+        print("📌 Versión:", version.split("\n")[0])
 
 if __name__ == "__main__":
     probar_conexion()

@@ -3,42 +3,54 @@
 {% block content %}
 <div style="text-align: center; padding: 20px 0;">
     <h1 style="color: #1e293b; margin-bottom: 10px;"> Tablero de Servicios</h1>
-    <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 40px;">
+    <p style="color: #64748b; font-size: 1.1rem; margin-bottom: 20px;">
         Bienvenido(a), <strong>{{ usuario.nombre }}</strong>
         <span class="badge badge-primary">ID: {{ usuario.usuario_id }}</span>
-        {% if usuario.rol == 'admin' %}
-        <span class="badge badge-warning">  Administrador</span>
-        {% endif %}
     </p>
 </div>
 
+{% if materias_inscritas %}
+<div style="margin-bottom: 40px;">
+    <h2 style="color: #1e293b; margin-bottom: 15px;"> Mis Materias Inscritas</h2>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <thead style="background: #f1f5f9; color: #475569;">
+                <tr>
+                    <th style="padding: 12px; text-align: left;">Materia</th>
+                    <th style="padding: 12px; text-align: left;">Día</th>
+                    <th style="padding: 12px; text-align: left;">Hora</th>
+                    <th style="padding: 12px; text-align: left;">Salón</th>
+                    <th style="padding: 12px; text-align: left;">Periodo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for materia in materias_inscritas %}
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 12px;"><strong>{{ materia.nombre }}</strong></td>
+                    <td style="padding: 12px;">{{ materia.dia }}</td>
+                    <td style="padding: 12px;">{{ materia.hora }}</td>
+                    <td style="padding: 12px;">{{ materia.salon }}</td>
+                    <td style="padding: 12px;"><span class="badge badge-primary">{{ materia.periodo }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div style="text-align: center; padding: 40px; background: #f8fafc; border-radius: 8px; margin-bottom: 40px;">
+    <p style="color: #64748b; font-size: 1.1rem;"> No tienes materias inscritas aún. ¡Ve al catálogo para inscribirte!</p>
+</div>
+{% endif %}
+
 <div class="grid">
-    <a class="tile" href="/perfil">
-        <div style="font-size: 2.5rem; margin-bottom: 10px;"> </div>
-        Perfil del alumno
-    </a>
-    
-    {% if usuario.rol != 'admin' %}
-    <a class="tile alt" href="/planificacion">
-        <div style="font-size: 2.5rem; margin-bottom: 10px;"> </div>
-        Planificación e inscripción
-    </a>
     <a class="tile" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);" href="/catalogo">
         <div style="font-size: 2.5rem; margin-bottom: 10px;"></div>
         Catálogo de cursos
     </a>
-    {% endif %}
-    
     <a class="tile alt" href="/horario">
         <div style="font-size: 2.5rem; margin-bottom: 10px;"> </div>
         Horario del alumno
     </a>
-    
-    {% if usuario.rol == 'admin' %}
-    <a class="tile" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);" href="/admin">
-        <div style="font-size: 2.5rem; margin-bottom: 10px;"> </div>
-        Panel de Administración
-    </a>
-    {% endif %}
 </div>
 {% endblock %}

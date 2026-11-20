@@ -70,8 +70,7 @@ def usuario_session(request: Request):
     return SESSIONS.get(request.cookies.get("sm_session"))
 
 def _o_login(request):
-    uid = usuario_session(request)
-    return uid if uid is not None else RedirectResponse("/login", status_code=303)
+    return 1  # Usuario fijo sin autenticación
 
 # Función auxiliar para leer catálogo
 def _catalogo(db):
@@ -156,63 +155,35 @@ def re_seed():
 # ============ PORTAL WEB ============
 @app.get("/", include_in_schema=False)
 def raiz(request: Request):
-    return RedirectResponse("/tablero" if usuario_session(request) else "/login", status_code=303)
+    return RedirectResponse("/tablero", status_code=303)
 
-@app.get("/login", response_class=HTMLResponse, include_in_schema=False)
-def pagina_login(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 
-@app.post("/login", include_in_schema=False)
-def login(request: Request, email: str = Form(...), password: str = Form(...)):
-    u = cu.autenticar(email, password)
-    if not u:
-        return templates.TemplateResponse(request=request, name="login.html",
-                                          context={"error": "Credenciales inválidas"}, status_code=401)
-    sid = uuid.uuid4().hex; SESSIONS[sid] = u["usuario_id"]
-    resp = RedirectResponse("/tablero", status_code=303); resp.set_cookie("sm_session", sid)
-    return resp
 
-@app.get("/registro", response_class=HTMLResponse, include_in_schema=False)
-def pagina_registro(request: Request):
-    return templates.TemplateResponse(request=request, name="registro.html",
-                                      context={"error": None, "nuevo_id": None,
-                                               "todas_carreras": ["Ingeniería de Sistemas", "Medicina", 
-                                                                  "Administración de Empresas", "Ingeniería Mecánica"]})
-                                                                  
 
-@app.post("/registro", include_in_schema=False)
-def registro(request: Request, nombre: str = Form(...), email: str = Form(...), 
-             password: str = Form(...), carrera: str = Form("Ingeniería de Sistemas")):
-    try:
-        uid = cu.crear_usuario(nombre, email, password, carrera)
-    except ValueError as ve:
-        return templates.TemplateResponse(request=request, name="registro.html",
-                                          context={"error": str(ve), "nuevo_id": None,
-                                                   "todas_carreras": ["Ingeniería de Sistemas", "Medicina", 
-                                                                      "Administración de Empresas", "Ingeniería Mecánica"]})
-    
-    # ✅ Solo crear el usuario, SIN inscribir materias automáticamente
-    return templates.TemplateResponse(request=request, name="registro.html",
-                                      context={"error": None, "nuevo_id": uid, 
-                                               "nuevo_email": email,
-                                               "nuevo_nombre": nombre,
-                                               "carrera": carrera})
 
 @app.get("/tablero", response_class=HTMLResponse, include_in_schema=False)
-def tablero(request: Request):
-    r = _o_login(request)
-    if not isinstance(r, int): return r
+def tablero(request: Request, db: Session = Depends(database.get_db)):
+    usuario_fijo = {"usuario_id": 1, "nombre": "Juan Sebastián", "email": "juan@university.edu", "carrera": "Ingeniería de Sistemas", "rol": "student"}
+    
+    # Obtener materias inscritas del usuario desde la BD
+    rows = db.execute(text("""
+        SELECT m.grupo_id, m.materia_id, m.nombre, m.carrera, m.dia, m.hora, m.salon, um.periodo
+        FROM UsuarioMaterias um
+        JOIN Materias m ON um.materia_id = m.grupo_id
+        WHERE um.usuario_id = :u
+        ORDER BY m.materia_id
+    """), {"u": usuario_fijo["usuario_id"]}).fetchall()
+    
+    materias_inscritas = []
+    for x in rows:
+        materias_inscritas.append({
+            "grupo_id": x[0], "materia_id": x[1], "nombre": x[2], "carrera": x[3],
+            "dia": x[4] or "Por asignar", "hora": x[5] or "Por asignar", "salon": x[6] or "Por asignar",
+            "periodo": x[7]
+        })
+
     return templates.TemplateResponse(request=request, name="tablero.html",
-                                      context={"usuario": cu.obtener_usuario(r)})
-
-
-
-@app.get("/planificacion", response_class=HTMLResponse, include_in_schema=False)
-def planificacion(request: Request):
-    r = _o_login(request)
-    if not isinstance(r, int): return r
-    return templates.TemplateResponse(request=request, name="planificacion.html",
-                                      context={"usuario": cu.obtener_usuario(r)})
+                                      context={"usuario": usuario_fijo, "materias_inscritas": materias_inscritas})
 
 @app.get("/catalogo", response_class=HTMLResponse, include_in_schema=False)
 def catalogo(request: Request, msg: str = None, ok: str = None, db: Session = Depends(database.get_db)):
@@ -432,75 +403,6 @@ def web_inscripcion(request: Request, periodo: str = Form(...), grupo_id: int = 
     return render(f"Inscripción exitosa: {g[2]} ({g[4]} {g[5]} - {g[6]}) en el periodo {periodo} para {nombre_estudiante}.", True)
 
 
-@app.get("/perfil", response_class=HTMLResponse, include_in_schema=False)
-def perfil(request: Request, estudiante_id: int = None, msg: str = None, ok: str = None, 
-           db: Session = Depends(database.get_db)):
-    r = _o_login(request)
-    if not isinstance(r, int): return r
-    usuario = cu.obtener_usuario(r)
-    
-    if usuario.get("rol") == "admin":
-        # Lista dinámica de estudiantes
-        estudiantes_info = [
-            {"usuario_id": uid, "nombre": u["nombre"], "email": u["email"], "carrera": u["carrera"]}
-            for uid, u in cu.USUARIOS_MOCK.items()
-            if u.get("rol") != "admin"
-        ]
-        
-        estudiante_seleccionado = None
-        materias_estudiante = []
-        catalogo_materias = []
-        
-        # ✅ Obtener TODAS las materias del catálogo para el formulario de inscripción
-        rows_catalogo = db.execute(text("SELECT grupo_id, materia_id, nombre, carrera, dia, hora, salon FROM Materias ORDER BY carrera, materia_id, grupo_id")).fetchall()
-        for x in rows_catalogo:
-            catalogo_materias.append({
-                "grupo_id": x[0], "materia_id": x[1], "nombre": x[2], "carrera": x[3],
-                "dia": x[4] or "Por asignar", "hora": x[5] or "Por asignar", "salon": x[6] or "Por asignar",
-            })
-        
-        if estudiante_id and estudiante_id in cu.USUARIOS_MOCK:
-            u = cu.USUARIOS_MOCK[estudiante_id]
-            estudiante_seleccionado = {
-                "usuario_id": u["usuario_id"],
-                "nombre": u["nombre"],
-                "email": u["email"],
-                "carrera": u["carrera"]
-            }
-            
-            # Obtener materias inscritas del estudiante
-            rows = db.execute(text("""
-            SELECT m.grupo_id, m.materia_id, m.nombre, m.dia, m.hora, m.salon, um.periodo
-            FROM UsuarioMaterias um
-            JOIN Materias m ON um.materia_id = m.grupo_id
-            WHERE um.usuario_id = :u
-            ORDER BY m.materia_id, m.grupo_id
-            """), {"u": estudiante_id}).fetchall()
-            
-            for x in rows:
-                materias_estudiante.append({
-                    "grupo_id": x[0], "materia_id": x[1], "nombre": x[2],
-                    "dia": x[3] or "Por asignar",
-                    "hora": x[4] or "Por asignar", 
-                    "salon": x[5] or "Por asignar",
-                    "periodo": x[6]
-                })
-        
-        return templates.TemplateResponse(request=request, name="perfil.html",
-                                          context={
-                                              "usuario": usuario, 
-                                              "estudiantes_info": estudiantes_info,
-                                              "estudiante_seleccionado": estudiante_seleccionado,
-                                              "materias_estudiante": materias_estudiante,
-                                              "catalogo_materias": catalogo_materias,
-                                              "todos_los_periodos": TODOS_LOS_PERIODOS,
-                                              "periodo_activo": PERIODO_ACTIVO,
-                                              "msg": msg, 
-                                              "ok": ok == "1" if ok else False
-                                          })
-    else:
-        return templates.TemplateResponse(request=request, name="perfil.html",
-                                          context={"usuario": usuario})
 
 @app.get("/horario", response_class=HTMLResponse, include_in_schema=False)
 def horario(request: Request, periodo: str = None, ok: str = None, error: str = None,
@@ -570,11 +472,6 @@ def web_eliminar_materia(request: Request, materia_id: int = Form(...),
         return RedirectResponse("/horario?error=No+encontrada", status_code=303)
     return RedirectResponse("/horario?ok=Eliminada", status_code=303)
 
-@app.get("/salir", include_in_schema=False)
-def salir(request: Request):
-    SESSIONS.pop(request.cookies.get("sm_session"), None)
-    resp = RedirectResponse("/login", status_code=303); resp.delete_cookie("sm_session")
-    return resp
 
 @app.get("/pruebas", response_class=HTMLResponse, include_in_schema=False)
 def panel_pruebas(request: Request):
